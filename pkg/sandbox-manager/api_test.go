@@ -96,6 +96,7 @@ func TestSandboxManager_ClaimSandbox(t *testing.T) {
 		name              string
 		template          string
 		timeout           int
+		image             string
 		expectError       bool
 		expectedErrorCode errors.ErrorCode
 	}{
@@ -117,6 +118,12 @@ func TestSandboxManager_ClaimSandbox(t *testing.T) {
 			timeout:           1234,
 			expectError:       true,
 			expectedErrorCode: errors.ErrorInternal,
+		},
+		{
+			name:     "Claim with image",
+			template: "exist-1",
+			image:    "test-image",
+			timeout:  1234,
 		},
 	}
 
@@ -149,6 +156,20 @@ func TestSandboxManager_ClaimSandbox(t *testing.T) {
 						},
 					},
 				},
+				Spec: agentsv1alpha1.SandboxSpec{
+					SandboxTemplate: agentsv1alpha1.SandboxTemplate{
+						Template: &corev1.PodTemplateSpec{
+							Spec: corev1.PodSpec{
+								Containers: []corev1.Container{
+									{
+										Name:  "main",
+										Image: "old-image",
+									},
+								},
+							},
+						},
+					},
+				},
 				Status: agentsv1alpha1.SandboxStatus{
 					Phase: agentsv1alpha1.SandboxRunning,
 					Conditions: []metav1.Condition{
@@ -165,7 +186,6 @@ func TestSandboxManager_ClaimSandbox(t *testing.T) {
 
 			CreateSandboxWithStatus(t, client, testSbx)
 
-			// 等待informer同步
 			time.Sleep(100 * time.Millisecond)
 			err := retry.OnError(wait.Backoff{
 				Steps:    10,
@@ -185,8 +205,24 @@ func TestSandboxManager_ClaimSandbox(t *testing.T) {
 			})
 			assert.NoError(t, err)
 
-			got, err := manager.ClaimSandbox(context.Background(), "test-user", tt.template, func(sbx infra.Sandbox) {
-				sbx.SetTimeout(time.Duration(tt.timeout) * time.Second)
+			var claimed infra.Sandbox
+			err = retry.OnError(wait.Backoff{
+				Duration: 100 * time.Millisecond,
+				Factor:   1,
+				Steps:    20,
+			}, func(err error) bool {
+				return strings.Contains(err.Error(), "no stock")
+			}, func() error {
+				got, err := manager.ClaimSandbox(context.Background(), "test-user", tt.template, infra.ClaimSandboxOptions{
+					Modifier: func(sbx infra.Sandbox) {
+						sbx.SetTimeout(time.Duration(tt.timeout) * time.Second)
+					},
+					Image: tt.image,
+				})
+				if err == nil {
+					claimed = got
+				}
+				return err
 			})
 
 			if tt.expectError {
@@ -196,9 +232,9 @@ func TestSandboxManager_ClaimSandbox(t *testing.T) {
 				assert.NoError(t, err)
 				time.Sleep(100 * time.Millisecond)
 				// check route
-				route, ok := manager.proxy.LoadRoute(got.GetSandboxID())
+				route, ok := manager.proxy.LoadRoute(claimed.GetSandboxID())
 				assert.True(t, ok)
-				assert.Equal(t, got.GetSandboxID(), route.ID)
+				assert.Equal(t, claimed.GetSandboxID(), route.ID)
 				assert.Equal(t, testSbx.Status.PodInfo.PodIP, route.IP)
 				assert.Equal(t, "test-user", route.Owner)
 			}

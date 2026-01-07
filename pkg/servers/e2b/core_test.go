@@ -84,7 +84,7 @@ func Setup(t *testing.T) (*Controller, *clients.ClientSet, func()) {
 	_, err := clientSet.CoreV1().Secrets(namespace).Create(context.Background(), secret, metav1.CreateOptions{})
 	assert.NoError(t, err)
 
-	controller := NewController("example.com", InitKey, namespace, DefaultMaxTimeout, TestServerPort, true, clientSet)
+	controller := NewController("example.com", InitKey, namespace, models.DefaultMaxTimeout, TestServerPort, true, clientSet)
 	assert.NoError(t, controller.Init(consts.InfraSandboxCR))
 	_, err = controller.Run(namespace, "component=sandbox-manager")
 	assert.NoError(t, err)
@@ -145,6 +145,20 @@ func CreateSandboxPool(t *testing.T, client versioned.Interface, name string, av
 				ResourceVersion: "1",
 				UID:             types.UID(uuid.NewString()),
 			},
+			Spec: agentsv1alpha1.SandboxSpec{
+				SandboxTemplate: agentsv1alpha1.SandboxTemplate{
+					Template: &corev1.PodTemplateSpec{
+						Spec: corev1.PodSpec{
+							Containers: []corev1.Container{
+								{
+									Name:  "main",
+									Image: "old-image",
+								},
+							},
+						},
+					},
+				},
+			},
 			Status: agentsv1alpha1.SandboxStatus{
 				Phase: agentsv1alpha1.SandboxRunning,
 				Conditions: []metav1.Condition{
@@ -167,14 +181,6 @@ func CreateSandboxPool(t *testing.T, client versioned.Interface, name string, av
 			assert.NoError(t, client.ApiV1alpha1().Sandboxes(Namespace).Delete(context.Background(), fmt.Sprintf("%s-%d", name, i), metav1.DeleteOptions{}))
 		}
 	}
-}
-
-func AssertTimeAlmostEqual(t *testing.T, expected, actual time.Time) {
-	offset := expected.Sub(actual)
-	if offset < 0 {
-		offset = -offset
-	}
-	assert.True(t, offset < time.Second, fmt.Sprintf("actual time %s should be almost equal to expected %s", actual, expected))
 }
 
 // AvoidGetFromCache makes the resourceVersionExpectation unsatisfied to avoid getting sandbox from cache,
