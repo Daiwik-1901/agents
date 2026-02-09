@@ -44,7 +44,7 @@ jobs:
           version: ${{ env.KIND_VERSION }}
 
       - name: Free Disk Space (Ubuntu)
-        uses: jlumbroso/free-disk-space-action@54081f138730dfa15788a463835c85853a126f5d # v1.3.1
+        uses: jlumbroso/free-disk-space@54081f138730dfa15788a463835c85853a126f5d # v1.3.1
         with:
           # this might remove tools that are actually needed,
           # if set to "true" but frees about 6GB
